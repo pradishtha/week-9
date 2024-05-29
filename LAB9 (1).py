@@ -1,18 +1,53 @@
-from sklearn.datasets import load_iris
-from sklearn.neighbors import KNeighborsClassifier
-from sklearn.model_selection import train_test_split
+import pandas as pd
 import numpy as np
+import streamlit as st
+from math import ceil
+from scipy import linalg
+import matplotlib.pyplot as plt
 
-dataset=load_iris()
-#print(dataset)
-X_train,X_test,y_train,y_test=train_test_split(dataset["data"],dataset["target"],random_state=0)
+# Function to perform LOWESS smoothing
+def lowess(x, y, f, iterations):
+    n = len(x)
+    r = int(ceil(f * n))
+    h = [np.sort(np.abs(x - x[i]))[r] for i in range(n)]
+    w = np.clip(np.abs((x[:, None] - x[None, :]) / h), 0.0, 1.0)
+    w = (1 - w ** 3) ** 3
+    yest = np.zeros(n)
+    delta = np.ones(n)
+    for iteration in range(iterations):
+        for i in range(n):
+            weights = delta * w[:, i]
+            b = np.array([np.sum(weights * y), np.sum(weights * y * x)])
+            A = np.array([[np.sum(weights), np.sum(weights * x)], [np.sum(weights * x), np.sum(weights * x * x)]])
+            beta = linalg.solve(A, b)
+            yest[i] = beta[0] + beta[1] * x[i]
 
-kn=KNeighborsClassifier(n_neighbors=1)
-kn.fit(X_train,y_train)
+        residuals = y - yest
+        s = np.median(np.abs(residuals))
+        delta = np.clip(residuals / (6.0 * s), -1, 1)
+        delta = (1 - delta ** 2) ** 2
 
-for i in range(len(X_test)):
-    x=X_test[i]
-    x_new=np.array([x])
-    prediction=kn.predict(x_new)
-    print("TARGET=",y_test[i],dataset["target_names"][y_test[i]],"PREDICTED=",prediction,dataset["target_names"][prediction])
-print(kn.score(X_test,y_test))
+    return yest
+
+# Streamlit UI elements
+st.title('LOWESS Smoothing with Streamlit')
+st.write('This application performs LOWESS smoothing on a noisy sine wave.')
+
+# Parameters for LOWESS
+f = st.slider('Smoothing factor (f)', 0.1, 1.0, 0.25)
+iterations = st.slider('Number of iterations', 1, 10, 3)
+
+# Generate data
+n = 100
+x = np.linspace(0, 2 * np.pi, n)
+y = np.sin(x) + 0.3 * np.random.randn(n)
+
+# Perform LOWESS smoothing
+yest = lowess(x, y, f, iterations)
+
+# Plotting
+fig, ax = plt.subplots()
+ax.plot(x, y, 'r.', label='Noisy Data')
+ax.plot(x, yest, 'b-', label='LOWESS Smoothed')
+ax.legend()
+st.pyplot(fig)
